@@ -23,7 +23,7 @@
 - **API Framework**: [Gin](https://gin-gonic.com/)
 - **ORM**: [GORM](https://gorm.io/)
 - **Database**: [CockroachDB](https://www.cockroachlabs.com/) (PostgreSQL compatible)
-- **Architecture**: Command Pattern for business logic.
+- **Architecture**: Service/Repository pattern (reginald-style).
 
 ### Infrastructure
 - **Containerization**: [Docker](https://www.docker.com/) & Docker Compose
@@ -36,44 +36,55 @@
 - Node.js 18+ (for local development)
 
 ### Quick Start (Docker)
-The easiest way to get the app running is using Docker Compose:
+The easiest way to run the app is using Docker Compose. Everything runs in containers:
 
 ```bash
 docker-compose up -d
 ```
-This will start the CockroachDB instance. You can then run the backend and frontend locally or containerize them as well.
+
+- **Backend API**: http://localhost:8081
+- **Frontend**: http://localhost:3000 (proxies API to backend)
+- **CockroachDB**: localhost:26257
+
+The frontend acts as a "mask" of the backend—all API calls go through the frontend nginx proxy to the backend.
 
 ### Manual Setup
 
-#### 1. Backend
+#### 1. Start CockroachDB (if not using full Docker)
+```bash
+docker-compose up -d cockroachdb
+```
+
+#### 2. Backend
 ```bash
 cd backend
 go mod download
-go run cmd/server/main.go
+go run ./cmd/server
 ```
 The server will start at `http://localhost:8081`.
 
-#### 2. Frontend
+#### 3. Frontend
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-The dashboard will be available at `http://localhost:5173`.
+The dashboard will be at `http://localhost:5173` (Vite proxies `/api` to backend).
 
 ## 🏗️ Project Structure
 
 ```text
 .
-├── backend/            # Go source code
-│   ├── cmd/            # Entry points (main.go)
-│   ├── internal/       # Private library code (business logic, DB, models)
-│   └── ...
-├── frontend/           # Vue.js source code
-│   ├── src/            # Components, Views, Stores, Styles
-│   └── ...
-├── docker-compose.yml  # Infrastructure as code
-└── .gitignore          # Repository hygiene
+├── backend/                 # Go backend (reginald-style layout)
+│   ├── cmd/server/          # Entry point
+│   ├── internal/            # Services: shared, stocks, stocksync
+│   ├── pkg/                 # database, middleware, utils
+│   └── Dockerfile
+├── frontend/                # Vue.js (mask of backend)
+│   ├── src/
+│   ├── nginx.conf           # API proxy to backend
+│   └── Dockerfile
+└── docker-compose.yml       # Backend + Frontend + CockroachDB
 ```
 
 ## 📄 License

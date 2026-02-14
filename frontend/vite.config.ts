@@ -8,4 +8,13 @@ export default defineConfig({
     vue(),
     tailwindcss(),
   ],
+  base: '/',
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+      },
+    },
+  },
 })

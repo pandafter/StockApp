@@ -1,4 +1,3 @@
-version: '3.9'
 services:
   cockroachdb:
     image: cockroachdb/cockroach:latest-v23.1
@@ -9,6 +8,36 @@ services:
     volumes:
       - cockroach-data:/cockroach/cockroach-data
     restart: always
+    healthcheck:
+      test: ["CMD", "cockroach", "sql", "--insecure", "-e", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: stockapp-backend
+    ports:
+      - "8081:8081"
+    environment:
+      - DATABASE_URL=postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
+    depends_on:
+      cockroachdb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: stockapp-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
 
 volumes:
   cockroach-data:

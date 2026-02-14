@@ -1,156 +1,215 @@
-<script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
-import { useStockStore } from '../stores/StockStore'
+<script lang="ts">
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useStockStore } from '../stores/StockStore'
 import { formatCurrency } from '../utils/format'
-
-const store = useStockStore()
-const router = useRouter()
-
-const searchQuery = ref('')
-const sortBy = ref('symbol')
-const activeTab = ref('dashboard')
+import type { Stock } from '../models/stock'
+import { storeToRefs } from 'pinia'
 
 
-onMounted(() => {
-  store.fetchStocks('', sortBy.value, activeTab.value === 'dashboard')
-})
+export default {
+  setup() {
 
-const changeTab = (tab: string) => {
-  activeTab.value = tab
-  store.fetchStocks(searchQuery.value, sortBy.value, activeTab.value === 'dashboard')
-}
+      const router = useRouter()
+      const stockStore = useStockStore()
 
-let timeout: any = null
-watch([searchQuery, sortBy], () => {
-  if (timeout) clearTimeout(timeout)
-  timeout = setTimeout(() => {
-    store.fetchStocks(searchQuery.value, sortBy.value, activeTab.value === 'dashboard')
-  }, 300)
-})
+      const {stocks, currentStock, history, recommendation, loading, error} = storeToRefs(stockStore)
 
-const toggleWatchlist = async (symbol: string) => {
-  await store.toggleWatchlist(symbol)
-  if (activeTab.value === 'dashboard') {
-    store.fetchStocks(searchQuery.value, sortBy.value, true)
+
+      const searchQuery = ref('')
+      const sortBy = ref<'symbol' | 'current_price' | 'name'>('symbol')
+      const activeTab = ref<'dashboard' | 'explore'>('explore')
+
+      const watchlistOnly = computed(() => activeTab.value === 'dashboard')
+
+      let debounceTimer: ReturnType<typeof setTimeout> | null = null
+      watch([searchQuery, sortBy, activeTab], () => {
+        if (debounceTimer) clearTimeout(debounceTimer)
+        debounceTimer = setTimeout(fetchStocks, 300)
+      }, { immediate: true })
+
+      function fetchStocks() {
+        stockStore.fetchStocks(searchQuery.value, sortBy.value, watchlistOnly.value)
+      }
+
+      function setTab(tab: 'dashboard' | 'explore') {
+        activeTab.value = tab
+      }
+
+      async function toggleWatchlist(symbol: string) {
+        await stockStore.toggleWatchlist(symbol)
+        if (watchlistOnly.value) fetchStocks()
+      }
+
+      function goToDetail(symbol: string) {
+        router.push(`/stock/${symbol}`)
+      }
+
+      function getChangeClass(stock: Stock) {
+        const curr = stock.current_price
+        const prev = stock.prev_close
+        if (curr > prev) return 'text-emerald-500'
+        if (curr < prev) return 'text-rose-500'
+        return 'text-slate-500'
+      }
+
+      function getChangePercent(stock: Stock) {
+        const curr = stock.current_price
+        const prev = stock.prev_close
+        if (prev === 0) return '0.00%'
+        const pct = ((curr - prev) / prev) * 100
+        const sign = pct >= 0 ? '+' : ''
+        return `${sign}${pct.toFixed(2)}%`
+      }
+
+      return {stocks, currentStock, history, recommendation, loading, error, setTab, toggleWatchlist, goToDetail, getChangeClass, getChangePercent, formatCurrency, searchQuery, sortBy, activeTab}
   }
 }
-
-const getChangeColor = (current: number, prev: number) => {
-  if (current > prev) return 'text-green-400'
-  if (current < prev) return 'text-red-400'
-  return 'text-gray-400'
-}
-
-
 
 </script>
 
 <template>
-  <div class="animate-fade-in max-w-7xl mx-auto px-4 py-8">
-    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8 mb-12">
-        <div class="relative flex-grow sm:w-80 bg-white rounded-xl">
-          <input 
-            v-model="searchQuery" 
-            type="text"
-            placeholder="Search Symbols & More" 
-            class="glass-input w-full pl-10 text-indigo-500 focus:border-indigo-600 focus:outline-2 focus:outline-offset-2 focus:outline-indigo-600 active:outline-indigo-600 placeholder:text-indigo-600 focus:placeholder:text-indigo-300 caret-indigo-600 "
-          />
-        </div>
-      <div class="flex  gap-2 items-center">
-          <p class="text-indigo-700">Sort By:</p>
-          <select v-model="sortBy" class="bg-indigo-600 text-white p-3 cursor-pointer custom-select">
-            <option class="bg-indigo-600 text-white" value="symbol">Symbol</option>
-            <option class="bg-indigo-600 text-white" value="current_price">Price</option>
-            <option class="bg-indigo-600 text-white" value="name">Name</option>
-          </select>
-        </div>
-
-    </div>
-    
-
-    <div class="flex justify-center mb-10">
-      <div class="p-1 glass-card-transparent  flex gap-1 shadow-2xl">
-        <button 
-          @click="changeTab('dashboard')" 
-          :class="['px-8 py-2.5 rounded-xl font-bold transition-all', activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow-lg' : 'text-indigo-700 hover:text-white']"
+  <div class="animate-fade-in">
+    <!-- Filters -->
+    <div class="flex flex-col sm:flex-row gap-4 mb-8">
+      <div class="relative flex-1 max-w-sm">
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="Search symbols..."
+          class="w-full h-10 pl-4 pr-4 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-slate-600 focus:ring-1 focus:ring-slate-600 transition-colors"
+        />
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-sm text-slate-500">Sort</span>
+        <select
+          v-model="sortBy"
+          class="h-10 px-4 bg-slate-900 border border-slate-700 rounded-lg text-slate-300 text-sm focus:outline-none focus:border-slate-600 cursor-pointer"
         >
-          My Dashboard
-        </button>
-        <button 
-          @click="changeTab('explore')" 
-          :class="['px-8 py-2.5 rounded-xl font-bold transition-all', activeTab === 'explore' ? 'bg-indigo-600 text-white shadow-lg' : 'text-indigo-700 hover:text-white']"
-        >
-          Explore All
-        </button>
+          <option value="symbol">Symbol</option>
+          <option value="current_price">Price</option>
+          <option value="name">Name</option>
+        </select>
       </div>
     </div>
 
-    <div v-if="store.loading && store.stocks.length === 0" class="flex flex-col items-center py-20">
-      <div class="loader mb-4"></div>
-      <p class="text-sm font-medium text-gray-400">Synchronizing market data...</p>
-    </div>
-
-    <div v-else-if="store.error" class="glass-alert-error mb-12">
-      {{ store.error }}
-    </div>
-
-    <div v-else-if="store.stocks.length === 0" class="glass-card text-center py-20 flex flex-col items-center">
-      <div class="text-5xl mb-6">📉</div>
-      <h3 class="text-2xl font-bold mb-2">No results matched your view</h3>
-      <p class="text-white max-w-xs mb-8">Try adjusting your filters or search for something new in the <span class="text-indigo-200">"Explore All"</span>"Explore" tab.</p>
-      <button v-if="activeTab === 'dashboard'" @click="changeTab('explore')" class="text-indigo-200 font-bold hover:underline">
-        Go to Market Explorer →
+    <!-- Tabs -->
+    <div class="flex gap-1 p-1 bg-slate-900/50 rounded-lg max-w-xs mb-10">
+      <button
+        :class="[
+          'flex-1 py-2 text-sm font-medium rounded-md transition-colors',
+          activeTab === 'dashboard'
+            ? 'bg-slate-800 text-white'
+            : 'text-slate-500 hover:text-slate-300',
+        ]"
+        @click="setTab('dashboard')"
+      >
+        Watchlist
+      </button>
+      <button
+        :class="[
+          'flex-1 py-2 text-sm font-medium rounded-md transition-colors',
+          activeTab === 'explore'
+            ? 'bg-slate-800 text-white'
+            : 'text-slate-500 hover:text-slate-300',
+        ]"
+        @click="setTab('explore')"
+      >
+        All
       </button>
     </div>
 
-    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-      <div 
-        v-for="stock in store.stocks" 
-        :key="stock.symbol" 
-        class="glass-card hover-glow group flex flex-col justify-between h-full"
+    <!-- Loading -->
+    <div
+      v-if="loading && stocks.length === 0"
+      class="flex flex-col items-center py-20 text-slate-500"
+    >
+      <div class="w-8 h-8 border-2 border-slate-700 border-t-slate-400 rounded-full animate-spin" />
+      <p class="mt-4 text-sm">Loading market data...</p>
+    </div>
+
+    <!-- Error -->
+    <div
+      v-else-if="error"
+      class="py-4 px-4 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 text-sm"
+    >
+      {{ error }}
+    </div>
+
+    <!-- Empty -->
+    <div
+      v-else-if="stocks.length === 0"
+      class="py-20 text-center"
+    >
+      <p class="text-slate-500 text-lg mb-2">No stocks found</p>
+      <p class="text-slate-600 text-sm mb-6">
+        {{ activeTab === 'dashboard' ? 'Add stocks from All to your watchlist' : 'Try adjusting your search' }}
+      </p>
+      <button
+        v-if="activeTab === 'dashboard'"
+        class="text-sm text-slate-400 hover:text-slate-300 transition-colors"
+        @click="setTab('explore')"
       >
-        <div>
-          <div class="flex justify-between items-start mb-6">
-            <div @click="router.push(`/stock/${stock.symbol}`)" class="cursor-pointer">
-              <h3 class="text-2xl font-bold tracking-tighter group-hover:text-indigo-600 transition-colors">{{ stock.symbol }}</h3>
-              <p class="text-xs text-white uppercase font-bold tracking-widest mt-1">{{ stock.type }}</p>
-            </div>
-            <div class="text-right">
-              <p class="text-3xl font-mono font-bold leading-none">{{ formatCurrency(stock.current_price, stock.currency) }}</p>
-              <p :class="['text-[10px] font-bold mt-1', getChangeColor(stock.current_price, stock.prev_close)]">
-                {{ stock.current_price >= stock.prev_close ? '▲' : '▼' }} 
-                {{ Math.abs(((stock.current_price - stock.prev_close) / stock.prev_close) * 100).toFixed(2) }}%
-              </p>
-            </div>
-          </div>
-          <div class="bg-indigo-400">
+        Browse all stocks →
+      </button>
+    </div>
 
-          <div class="flex items-start bg-indigo-800 w-1 h-5 absolute">
+    <!-- Grid -->
+    <div
+      v-else
+      class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+    >
+      <article
+        v-for="stock in stocks"
+        :key="stock.symbol"
+        class="group p-4 bg-slate-900/50 border border-slate-800 rounded-lg hover:border-slate-700 transition-stock cursor-pointer"
+        @click="goToDetail(stock.symbol)"
+      >
+        <div class="flex justify-between items-start mb-3">
+          <div>
+            <h3 class="text-lg font-semibold text-slate-100 group-hover:text-white transition-colors">
+              {{ stock.symbol }}
+            </h3>
+            <p class="text-xs text-slate-500 uppercase tracking-wider mt-0.5">
+              {{ stock.type }}
+            </p>
           </div>
-          <p class="text-sm text-white font-medium mb-6 line-clamp-1 border-l-2 border-indigo-500/30 pl-3">
-            {{ stock.name }}
-          </p>
-          </div>
-
-        </div>
-
-        <div class="flex gap-2 pt-4 border-t border-white/5">
-          <router-link 
-            :to="'/stock/' + stock.symbol" 
-            class="action-btn flex-grow text-center py-2.5 bg-white/5 text-white hover:bg-white/10"
-          >
-            Monitor
-          </router-link>
-          
-          <button 
+          <button
+            class="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors shrink-0 addButton"
+            title="Toggle watchlist"
+            :class="{active: stock.in_watchlist}"
             @click.stop="toggleWatchlist(stock.symbol)"
-            :class="['action-btn px-4 py-2.5', stock.in_watchlist ? 'bg-indigo-600 text-white' : 'bg-indigo-600 text-white border border-indigo-500/30 text-indigo-400 hover:bg-indigo-500 hover:text-white']"
           >
             {{ stock.in_watchlist ? '✓' : '+' }}
           </button>
         </div>
-      </div>
+        <p class="text-sm text-slate-500 line-clamp-1 mb-4">
+          {{ stock.name }}
+        </p>
+        <div class="flex justify-between items-baseline">
+          <span class="text-xl font-mono font-semibold font-mono-num text-slate-100">
+            {{ formatCurrency(stock.current_price, stock.currency) }}
+          </span>
+          <span :class="['text-sm font-mono font-mono-num', getChangeClass(stock)]">
+            {{ getChangePercent(stock) }}
+          </span>
+        </div>
+        <div class="mt-4 pt-4 border-t border-slate-800 flex gap-2">
+          <button
+            class="flex-1 py-2 text-sm font-medium text-slate-400 hover:text-slate-200 bg-slate-800/50 hover:bg-slate-800 rounded-lg transition-colors"
+            @click.stop="goToDetail(stock.symbol)"
+          >
+            Details
+          </button>
+        </div>
+      </article>
     </div>
   </div>
 </template>
+
+<style scoped>
+.addButton.active {
+  background: #039e77;
+  color: white;
+}
+</style>
